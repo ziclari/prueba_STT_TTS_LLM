@@ -1,0 +1,18 @@
+# Requisitos para el Modelo Híbrido de Baja Latencia
+
+# Audio y procesamiento
+PyAudio==0.2.14
+numpy>=1.24.0
+
+# STT - Vosk
+vosk>=0.3.45
+
+# TTS - Piper
+piper-tts>=1.2.0
+
+# LLM - Gemini
+google-generativeai>=0.3.0
+
+# Async y utilidades
+python-dotenv>=1.0.0
+aiofiles>=23.0.0
