@@ -7,7 +7,21 @@ from datetime import datetime, timedelta
 from config import Config
 from stt_vosk import VoskSTT
 from tts_piper import PiperTTS
-from llm_gemini import GeminiLLM
+
+# Importar el LLM según configuración
+def get_llm_class():
+    """Obtiene la clase LLM según configuración"""
+    if Config.LLM_PROVIDER == "gemini":
+        from llm_gemini import GeminiLLM
+        return GeminiLLM
+    elif Config.LLM_PROVIDER == "groq":
+        from llm_groq import GroqLLM
+        return GroqLLM
+    elif Config.LLM_PROVIDER == "ollama":
+        from llm_ollama import OllamaLLM
+        return OllamaLLM
+    else:
+        raise ValueError(f"LLM_PROVIDER inválido: {Config.LLM_PROVIDER}")
 
 
 class HybridVoiceAssistant:
@@ -20,7 +34,10 @@ class HybridVoiceAssistant:
         """
         self.stt = VoskSTT()
         self.tts = PiperTTS()
-        self.llm = GeminiLLM()
+        
+        # Obtener LLM según configuración
+        LLMClass = get_llm_class()
+        self.llm = LLMClass()
         
         self.is_running = False
         self.conversation_start = None
@@ -38,6 +55,7 @@ class HybridVoiceAssistant:
         # Validar configuración
         try:
             Config.validate()
+            print(f"📡 LLM Provider: {Config.LLM_PROVIDER.upper()}")
         except Exception as e:
             print(f"❌ Error en configuración: {e}")
             return False
@@ -49,8 +67,14 @@ class HybridVoiceAssistant:
         if not self.tts.initialize():
             return False
         
-        if not self.llm.initialize():
-            return False
+        # Inicializar LLM (puede ser async para Ollama)
+        llm_init = self.llm.initialize()
+        if asyncio.iscoroutine(llm_init):
+            if not await llm_init:
+                return False
+        else:
+            if not llm_init:
+                return False
         
         print("=" * 60)
         print("✅ Todos los componentes inicializados correctamente")
@@ -68,7 +92,7 @@ class HybridVoiceAssistant:
         
         try:
             # Mensaje de bienvenida
-            await self.speak("[FELIZ] ¡Hola! Estoy lista para ayudarte. ¿En qué puedo asistirte?")
+            await self.speak("[FELIZ] Hola Estoy lista para ayudarte. En que puedo asistirte")
             
             # Crear tareas concurrentes
             listen_task = asyncio.create_task(self.listen_loop())
@@ -198,7 +222,7 @@ async def main():
     if not await assistant.initialize():
         print("❌ No se pudo inicializar el asistente")
         return
-        
+    # Manejar señal de interrupción
     try:
         await assistant.run()
     except KeyboardInterrupt:
