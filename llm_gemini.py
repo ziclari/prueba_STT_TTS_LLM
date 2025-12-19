@@ -4,16 +4,16 @@ llm_gemini.py - Integración con Gemini API
 import asyncio
 import re
 from typing import AsyncGenerator, Optional
-import google.generativeai as genai
+from google import genai
 from config import Config
-
+import unicodedata
 
 class GeminiLLM:
     """Clase para manejo del LLM con Gemini API"""
     
     def __init__(self):
-        self.model = None
-        self.chat = None
+        self.client = None
+        self.system_instruction = Config.SYSTEM_INSTRUCTION
         self.conversation_history = []
         
     def initialize(self):
@@ -25,25 +25,10 @@ class GeminiLLM:
                 raise ValueError("GEMINI_API_KEY no configurada")
             
             # Configurar API
-            genai.configure(api_key=Config.GEMINI_API_KEY)
-            
-            # Crear modelo con configuración
-            generation_config = {
-                "temperature": 0.9,
-                "top_p": 0.95,
-                "top_k": 40,
-                "max_output_tokens": 1024,
-            }
-            
-            self.model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
-                generation_config=generation_config,
-                system_instruction=Config.SYSTEM_INSTRUCTION
-            )
-            
+            self.client = genai.Client(api_key=Config.GEMINI_API_KEY)
             # Iniciar chat
-            self.chat = self.model.start_chat(history=[])
-            
+            self.conversation_history = []
+
             print("✅ Gemini API inicializado correctamente")
             return True
             
@@ -52,7 +37,23 @@ class GeminiLLM:
             print("💡 Verifica tu GEMINI_API_KEY en el archivo .env")
             print("   Obtén una clave en: https://makersuite.google.com/app/apikey")
             return False
-    
+
+    def _build_prompt(self, user_message: str) -> str:
+        parts = []
+
+        # 1. SYSTEM SIEMPRE ARRIBA
+        parts.append(f"SYSTEM:\n{self.system_instruction}\n")
+
+        # 2. HISTORIAL
+        for turn in self.conversation_history:
+            parts.append(f"USER:\n{turn['user']}\n")
+            parts.append(f"ASSISTANT:\n{turn['assistant']}\n")
+
+        # 3. MENSAJE ACTUAL
+        parts.append(f"USER:\n{user_message}\nASSISTANT:")
+
+        return "\n".join(parts)
+
     async def send_message_stream(
         self, 
         message: str
@@ -67,30 +68,22 @@ class GeminiLLM:
             Fragmentos de texto de la respuesta
         """
         try:
-            print(f"💬 Enviando a Gemini: {message}")
-            
-            # Enviar mensaje con streaming
+            prompt = self._build_prompt(message)
+
             response = await asyncio.to_thread(
-                self.chat.send_message,
-                message,
-                stream=True
+                self.client.models.generate_content,
+                model="gemini-2.5-flash",
+                contents=prompt
             )
             
-            # Iterar sobre los chunks de respuesta
-            full_response = ""
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    yield chunk.text
-            
-            # Guardar en historial
+            text = self.normalize_for_tts(response.text or "")
+            yield text
+
             self.conversation_history.append({
                 "user": message,
-                "assistant": full_response
+                "assistant": text
             })
-            
-            print(f"✅ Respuesta completa recibida ({len(full_response)} chars)")
-            
+
         except Exception as e:
             print(f"❌ Error en Gemini: {e}")
             yield "[ERROR] Lo siento, tuve un problema procesando tu mensaje."
@@ -101,6 +94,7 @@ class GeminiLLM:
         chunk_callback=None
     ) -> str:
         """
+
         Obtiene respuesta con chunking inteligente (por puntuación)
         
         Args:
@@ -192,13 +186,35 @@ class GeminiLLM:
         if seconds_remaining <= 30:
             time_message = f"[SISTEMA] Quedan {seconds_remaining} segundos. Despídete naturalmente."
             self.conversation_history.append({
-                "system": time_message
+                "user": "",
+                "assistant": time_message
             })
+
             print(f"⏰ Presión de tiempo añadida: {seconds_remaining}s restantes")
-    
+
+    def normalize_for_tts(self, text: str) -> str:
+        # 1. Normalizar unicode
+        text = unicodedata.normalize("NFD", text)
+
+        # 2. Quitar acentos, pero conservar ñ / Ñ
+        text = "".join(
+            c for c in text
+            if unicodedata.category(c) != "Mn"
+            or c.lower() == "n"
+        )
+
+        # 3. Filtrar caracteres permitidos:
+        # letras, ñ, números, espacio, coma y punto
+        text = re.sub(r"[^a-zA-ZñÑ0-9\s.,]", "", text)
+
+        # 4. Normalizar espacios
+        text = re.sub(r"\s+", " ", text).strip()
+
+        return text
+
+
     def reset_conversation(self):
         """Reinicia la conversación"""
-        self.chat = self.model.start_chat(history=[])
         self.conversation_history = []
         print("🔄 Conversación reiniciada")
 
