@@ -70,27 +70,16 @@ class OllamaLLM:
                 print("✅ Modelo descargado")
 
     def _build_prompt(self, user_message: str) -> str:
-        """
-        Prompt compatible con Mistral (instruction format)
-        """
-        prompt = []
-
-        # Instrucción del sistema
-        if self.system_instruction:
-            prompt.append(f"{self.system_instruction}\n\n")
-
-        # Historial
+        """Construye el prompt completo"""
+        parts = [f"SYSTEM:\n{self.system_instruction}\n"]
+        
         for turn in self.conversation_history:
-            if turn["user"]:
-                prompt.append(f"### Instruction:\n{turn['user']}\n\n")
-            if turn["assistant"]:
-                prompt.append(f"### Response:\n{turn['assistant']}\n\n")
-
-        # Mensaje actual
-        prompt.append(f"### Instruction:\n{user_message}\n\n### Response:\n")
-
-        return "".join(prompt)
-
+            parts.append(f"USER:\n{turn['user']}\n")
+            parts.append(f"ASSISTANT:\n{turn['assistant']}\n")
+        
+        parts.append(f"USER:\n{user_message}\nASSISTANT:")
+        
+        return "\n".join(parts)
 
     async def send_message_stream(
         self, 
@@ -114,11 +103,6 @@ class OllamaLLM:
                         "model": self.model,
                         "prompt": prompt,
                         "stream": True,
-                        "options": {
-                            "temperature": 0.6,
-                            "top_p": 0.9,
-                            "num_ctx": 4096
-                        }
                     }
                 ) as resp:
                     buffer = ""
