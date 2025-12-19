@@ -123,6 +123,7 @@ class OllamaLLM:
                                 if "response" in data and data["response"]:
                                     text = data["response"]
                                     full_response += text
+                                    text = self.normalize_for_tts(text or "")
                                     yield text
 
                                 if data.get("done"):
@@ -235,23 +236,26 @@ class OllamaLLM:
             })
             print(f"⏰ Presión de tiempo añadida: {seconds_remaining}s restantes")
 
-    def normalize_for_tts(self, text: str) -> str:
-        """Normaliza texto para TTS (sin acentos que Piper pronuncia mal)"""
+    def normalize_for_tts(self, text: str, prev: str = "") -> str:
         # Normalizar unicode
         text = unicodedata.normalize("NFD", text)
-        
-        # Quitar acentos pero conservar ñ/Ñ
+
+        # Quitar acentos pero conservar ñ
         text = "".join(
             c for c in text
             if unicodedata.category(c) != "Mn" or c.lower() == "n"
         )
-        
-        # Solo letras, ñ, números, espacio, coma y punto
-        text = re.sub(r"[^a-zA-ZñÑ0-9\s.,!?]", "", text)
-        
-        # Normalizar espacios
-        text = re.sub(r"\s+", " ", text).strip()
-        
+
+        # Permitir corchetes
+        text = re.sub(r"[^a-zA-ZñÑ0-9\s.,!?\[\]]", "", text)
+
+        # Normalizar espacios internos
+        text = re.sub(r"\s+", " ", text)
+
+        # --- FIX CLAVE ---
+        if prev and not prev.endswith((" ", "\n")) and not text.startswith((" ", ".", ",", "!", "?", "]")):
+            text = " " + text
+
         return text
 
     def reset_conversation(self):
